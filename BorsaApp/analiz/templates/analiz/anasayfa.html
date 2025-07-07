@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BorsaApp | Anasayfa</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            text-align: center;
+            padding-top: 100px;
+        }
+        form {
+            display: inline-block;
+            position: relative;
+        }
+        input[type="text"],
+        input[type="date"],
+        #id_kod,
+        #id_baslangic_tarihi {
+            padding: 10px;
+            width: 300px;
+            margin-bottom: 10px;
+            margin-top: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        label {
+            display: block;
+            margin-top: 15px;
+            font-weight: bold;
+        }
+        button {
+            padding: 10px 20px;
+            margin-top: 10px;
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .autocomplete-wrapper {
+            position: relative;
+            display: inline-block;
+            width: 300px;
+        }
+        .autocomplete-list {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            width: 100%;
+            background-color: white;
+            border: 1px solid #ccc;
+            border-top: none;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 999;
+            text-align: left;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .autocomplete-item {
+            padding: 10px;
+            cursor: pointer;
+        }
+        .autocomplete-item:hover {
+            background-color: #e9e9e9;
+        }
+        .autocomplete-item.active, .autocomplete-item:active {
+            background-color: #007bff;
+            color: white;
+        }
+        .autocomplete-highlight {
+            font-weight: bold;
+            color: #007bff;
+        }
+        /* Navbar padding fix */
+        .navbar {
+            margin-bottom: 40px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Modern Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+        <a class="navbar-brand" href="{% url 'anasayfa' %}">BorsaApp</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ml-auto">
+                <!-- Anasayfa button removed -->
+            </ul>
+        </div>
+    </nav>
+    <div class="container" style="margin-top: 120px;">
+        <h1>Hisse Analizi</h1>
+        <form method="post">
+            {% csrf_token %}
+            <label for="{{ form.kod.id_for_label }}">Hisse Kodu:</label>
+            <div class="autocomplete-wrapper">
+                {{ form.kod }}
+                <div id="autocomplete-list" class="autocomplete-list"></div>
+            </div>
+
+            <label for="{{ form.baslangic_tarihi.id_for_label }}">Yatırım Başlangıç Tarihi (isteğe bağlı):</label>
+            {{ form.baslangic_tarihi }}
+
+            <button type="submit">Analiz Et</button>
+        </form>
+        <div id="error-message" class="alert alert-danger" style="display:none; margin-top:20px;"></div>
+    </div>
+    <div id="loading-spinner" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(255,255,255,0.7); z-index:2000; align-items:center; justify-content:center;">
+        <div class="spinner-border text-primary" style="width: 4rem; height: 4rem;" role="status">
+            <span class="sr-only">Yükleniyor...</span>
+        </div>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        const kodInput = document.getElementById("id_kod");
+        const autocompleteList = document.getElementById("autocomplete-list");
+        const loadingSpinner = document.getElementById("loading-spinner");
+        let timeout = null;
+        let currentFocus = -1;
+        let currentResults = [];
+
+        function highlightMatch(text, query) {
+            if (!query) return text;
+            const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'ig');
+            return text.replace(regex, '<span class="autocomplete-highlight">$1</span>');
+        }
+
+        function showError(msg) {
+            const errorDiv = document.getElementById("error-message");
+            errorDiv.textContent = msg;
+            errorDiv.style.display = "block";
+        }
+        function hideError() {
+            const errorDiv = document.getElementById("error-message");
+            errorDiv.style.display = "none";
+        }
+
+        kodInput.addEventListener("input", function () {
+            clearTimeout(timeout);
+            const query = this.value.trim();
+            currentFocus = -1;
+            currentResults = [];
+            hideError();
+            if (query.length < 1) {
+                autocompleteList.innerHTML = "";
+                showError("Lütfen bir hisse kodu veya şirket adı girin.");
+                return;
+            }
+
+            timeout = setTimeout(async () => {
+                try {
+                    loadingSpinner.style.display = "flex";
+                    const response = await fetch(`/autocomplete/?q=${query}`);
+                    const results = await response.json();
+                    autocompleteList.innerHTML = "";
+                    loadingSpinner.style.display = "none";
+                    currentResults = results;
+
+                    if (results.length > 0) {
+                        results.forEach((item, idx) => {
+                            const div = document.createElement("div");
+                            div.classList.add("autocomplete-item");
+                            const cleanShort = item.short.split("\n")[0].trim();
+                            const highlightedShort = highlightMatch(cleanShort, query);
+                            const highlightedName = highlightMatch(item.name, query);
+                            div.innerHTML = `${highlightedShort} <span style='color:#888;'>(${highlightedName})</span>`;
+                            div.addEventListener("click", () => {
+                                kodInput.value = cleanShort;
+                                autocompleteList.innerHTML = "";
+                            });
+                            autocompleteList.appendChild(div);
+                        });
+                    } else {
+                        const noResultDiv = document.createElement("div");
+                        noResultDiv.classList.add("autocomplete-item");
+                        noResultDiv.textContent = "Sonuç bulunamadı.";
+                        autocompleteList.appendChild(noResultDiv);
+                    }
+                } catch (error) {
+                    loadingSpinner.style.display = "none";
+                    console.error("Autocomplete fetch error:", error);
+                    autocompleteList.innerHTML = '<div class="autocomplete-item" style="color:red;">Hata oluştu.</div>';
+                    showError("Otomatik tamamlama sırasında bir hata oluştu. Lütfen tekrar deneyin.");
+                }
+            }, 300);
+        });
+
+        kodInput.addEventListener("keydown", function(e) {
+            let items = autocompleteList.getElementsByClassName("autocomplete-item");
+            if (!items.length) return;
+            if (e.key === "ArrowDown") {
+                currentFocus++;
+                addActive(items);
+                e.preventDefault();
+            } else if (e.key === "ArrowUp") {
+                currentFocus--;
+                addActive(items);
+                e.preventDefault();
+            } else if (e.key === "Enter") {
+                if (currentFocus > -1 && items[currentFocus]) {
+                    items[currentFocus].click();
+                    e.preventDefault();
+                }
+            }
+        });
+
+        function addActive(items) {
+            if (!items) return;
+            removeActive(items);
+            if (currentFocus >= items.length) currentFocus = 0;
+            if (currentFocus < 0) currentFocus = items.length - 1;
+            items[currentFocus].classList.add("active");
+            items[currentFocus].scrollIntoView({block: 'nearest'});
+        }
+        function removeActive(items) {
+            for (let i = 0; i < items.length; i++) {
+                items[i].classList.remove("active");
+            }
+        }
+
+        document.addEventListener("click", function (e) {
+            if (!e.target.closest(".autocomplete-wrapper") && e.target !== kodInput) {
+                autocompleteList.innerHTML = "";
+            }
+        });
+
+        // Show spinner on form submit
+        document.querySelector("form").addEventListener("submit", function() {
+            loadingSpinner.style.display = "flex";
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            var kodInput = document.getElementById('id_kod');
+            if (kodInput) {
+                kodInput.setAttribute('autocomplete', 'off');
+            }
+        });
+    </script>
+</body>
+</html>
